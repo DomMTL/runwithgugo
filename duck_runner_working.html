@@ -41,6 +41,10 @@
         class GameScene extends Phaser.Scene {
             constructor() {
                 super({ key: 'GameScene' });
+                this.resetGameVariables();
+            }
+
+            resetGameVariables() {
                 this.player = null;
                 this.platforms = null;
                 this.obstacles = null;
@@ -48,12 +52,13 @@
                 this.score = 0;
                 this.distance = 0;
                 this.scoreText = null;
-                this.gameSpeed = 200;
+                this.gameSpeed = 200; // Always reset to initial speed
                 this.jumpPower = 600;
                 this.obstacleTimer = 0;
                 this.coinTimer = 0;
-                this.nextObstacleX = 600;
-                this.nextCoinX = 800;
+                this.nextObstacleX = 400; // First obstacle at 400 pixels (duck starts at 100)
+                this.nextCoinX = 500; // First coin at 500 pixels
+                console.log("Game variables reset - Speed:", this.gameSpeed);
             }
 
             preload() {
@@ -93,6 +98,9 @@
             }
 
             create() {
+                // Reset all game variables when scene is created/restarted
+                this.resetGameVariables();
+                
                 // Set world bounds to be very large
                 this.physics.world.setBounds(0, 0, 10000, 600);
 
@@ -173,22 +181,26 @@
                 }
 
                 // Spawn obstacles based on duck position
-                if (this.player.x > this.nextObstacleX - 800) {
+                if (this.player.x > this.nextObstacleX - 400) {
                     this.spawnObstacle();
-                    this.nextObstacleX += 300 + Math.random() * 400; // Next obstacle in 300-700 pixels
+                    this.nextObstacleX = this.player.x + 300 + Math.random() * 400; // Next obstacle 300-700 pixels ahead
+                    console.log("Next obstacle will be at:", this.nextObstacleX);
                 }
 
-                // Spawn coins based on duck position
-                if (this.player.x > this.nextCoinX - 800) {
+                // Spawn coins based on duck position  
+                if (this.player.x > this.nextCoinX - 400) {
                     this.spawnCoin();
-                    this.nextCoinX += 400 + Math.random() * 600; // Next coin in 400-1000 pixels
+                    this.nextCoinX = this.player.x + 400 + Math.random() * 600; // Next coin 400-1000 pixels ahead
+                    console.log("Next coin will be at:", this.nextCoinX);
                 }
 
                 // Clean up old objects behind the duck
                 this.cleanupObjects();
 
-                // Gradually increase speed
-                this.gameSpeed += delta * 0.01;
+                // Gradually increase speed (but cap it at reasonable level)
+                if (this.gameSpeed < 350) {
+                    this.gameSpeed += delta * 0.005; // Slower speed increase
+                }
             }
 
             spawnObstacle() {
