@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duck Runner - Lanes & Sliding</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #87CEEB;
+            font-family: Arial, sans-serif;
+        }
+        #game-container {
+            border: 3px solid #333;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        .instructions {
+            text-align: center;
+            margin-bottom: 10px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <div class="instructions">
+            <h2>🦆 Duck Runner - Lane System 🦆</h2>
+            <p>SPACE: Jump | UP/DOWN: Switch Lanes | HOLD DOWN: Slide</p>
+        </div>
+        <div id="game-container"></div>
+    </div>
+
+    <script>
+        class GameScene extends Phaser.Scene {
+            constructor() {
+                super({ key: 'GameScene' });
+                this.player = null;
+                this.platforms = null;
+                this.obstacles = null;
+                this.coins = null;
+                this.score = 0;
+                this.distance = 0;
+                this.scoreText = null;
+                this.gameSpeed = 200;
+                this.jumpPower = 600;
+                this.nextObstacleX = 600;
+                this.nextCoinX = 400;
+                
+                // Lane system
+                this.lanes = [450, 520, 590]; // Three lane Y positions
+                this.currentLane = 1; // Start in middle lane
+                
+                // Sliding
+                this.isSliding = false;
+            }
+
+            preload() {
+                this.createAssets();
+            }
+
+            createAssets() {
+                // Duck sprite (bright yellow rectangle)
+                this.add.graphics()
+                    .fillStyle(0xFFFF00)
+                    .fillRect(0, 0, 50, 40)
+                    .fillStyle(0xFF8C00) // Orange beak
+                    .fillTriangle(0, 20, 15, 15, 15, 25)
+                    .fillStyle(0x000000) // Black eye
+                    .fillCircle(35, 15, 3)
+                    .generateTexture('duck', 50, 40);
+
+                // Ground tile (brown)
+                this.add.graphics()
+                    .fillStyle(0x8B4513)
+                    .fillRect(0, 0, 64, 64)
+                    .generateTexture('ground', 64, 64);
+
+                // Regular low obstacles (jump over)
+                this.add.graphics()
+                    .fillStyle(0xFF0000)
+                    .fillRect(0, 0, 40, 40)
+                    .generateTexture('low_obstacle', 40, 40);
+
+                // High obstacles (slide under)
+                this.add.graphics()
+                    .fillStyle(0xFF0000)
+                    .fillRect(0, 0, 40, 80)
+                    .generateTexture('high_obstacle', 40, 80);
+
+                // Coins
+                this.add.graphics()
+                    .fillStyle(0xFFD700)
+                    .fillCircle(15, 15, 15)
+                    .generateTexture('coin', 30, 30);
+            }
+
+            create() {
+                // Set world bounds
+                this.physics.world.setBounds(0, 0, 10000, 600);
+
+                // Create physics groups
+                this.platforms = this.physics.add.staticGroup();
+                this.obstacles = this.physics.add.staticGroup();
+                this.coins = this.physics.add.group();
+
+                // Create ground
+                this.createGround();
+
+                // Create player duck in middle lane
+                this.player = this.physics.add.sprite(100, this.lanes[this.currentLane], 'duck');
+                this.player.setBounce(0);
+                this.player.setCollideWorldBounds(true);
+                this.player.body.setSize(45, 35);
+                this.player.setScale(1.2);
+                this.player.setVelocityX(this.gameSpeed);
+
+                console.log("Duck created at lane", this.currentLane, "Y position:", this.player.y);
+
+                // Collisions
+                this.physics.add.collider(this.player, this.platforms);
+                this.physics.add.collider(this.player, this.obstacles, this.hitObstacle, null, this);
+                this.physics.add.overlap(this.player, this.coins, this.collectCoin, null, this);
+
+                // Controls
+                this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+                this.upKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
+                this.downKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
+
+                // Camera follows duck
+                this.cameras.main.startFollow(this.player);
+                this.cameras.main.setFollowOffset(-200, 0);
+
+                // UI
+                this.scoreText = this.add.text(16, 16, 'Score: 0', {
+                    fontSize: '18px',
+                    fill: '#000',
+                    backgroundColor: '#fff',
+                    padding: { x: 10, y: 5 }
+                });
+                this.scoreText.setScrollFactor(0);
+
+                console.log("Game ready!");
+            }
+
+            createGround() {
+                // Create ground at bottom
+                for (let x = 0; x < 10000; x += 64) {
+                    const ground = this.platforms.create(x, 630, 'ground');
+                    ground.setScale(1).refreshBody();
+                }
+            }
+
+            update(time, delta) {
+                // Update score
+                this.distance = Math.max(0, this.player.x - 100);
+                this.score = Math.floor(this.distance / 10);
+                
+                // Update UI
+                this.scoreText.setText(`Score: ${this.score}\nDistance: ${Math.floor(this.distance)}m\nLane: ${this.currentLane + 1}/3\nSliding: ${this.isSliding ? 'YES' : 'NO'}`);
+
+                // Lane switching with UP/DOWN arrows
+                if (Phaser.Input.Keyboard.JustDown(this.upKey) && this.currentLane > 0) {
+                    this.currentLane--;
+                    this.tweens.add({
+                        targets: this.player,
+                        y: this.lanes[this.currentLane],
+                        duration: 200,
+                        ease: 'Power2'
+                    });
+                    console.log("Switched to lane", this.currentLane);
+                }
+
+                if (Phaser.Input.Keyboard.JustDown(this.downKey) && this.currentLane < 2) {
+                    this.currentLane++;
+                    this.tweens.add({
+                        targets: this.player,
+                        y: this.lanes[this.currentLane],
+                        duration: 200,
+                        ease: 'Power2'
+                    });
+                    console.log("Switched to lane", this.currentLane);
+                }
+
+                // Sliding (hold DOWN while on ground)
+                if (this.downKey.isDown && this.player.body.touching.down && !this.isSliding) {
+                    this.startSliding();
+                }
+
+                // Jumping (SPACE while on ground and not sliding)
+                if (this.spaceKey.isDown && this.player.body.touching.down && !this.isSliding) {
+                    this.player.setVelocityY(-this.jumpPower);
+                    console.log("Duck jumped!");
+                }
+
+                // Keep duck moving forward
+                if (this.player.body.velocity.x < this.gameSpeed) {
+                    this.player.setVelocityX(this.gameSpeed);
+                }
+
+                // Spawn obstacles
+                if (this.player.x > this.nextObstacleX - 400) {
+                    this.spawnObstacle();
+                    this.nextObstacleX = this.player.x + 400 + Math.random() * 600;
+                }
+
+                // Spawn coins
+                if (this.player.x > this.nextCoinX - 300) {
+                    this.spawnCoin();
+                    this.nextCoinX = this.player.x + 200 + Math.random() * 400;
+                }
+
+                // Clean up old objects
+                this.cleanupObjects();
+
+                // Gradually increase speed
+                if (this.gameSpeed < 350) {
+                    this.gameSpeed += delta * 0.005;
+                }
+            }
+
+            startSliding() {
+                this.isSliding = true;
+                this.player.setScale(1.2, 0.6); // Flatten duck
+                console.log("Started sliding!");
+                
+                this.time.delayedCall(1500, () => {
+                    this.isSliding = false;
+                    this.player.setScale(1.2);
+                    console.log("Stopped sliding");
+                });
+            }
+
+            spawnObstacle() {
+                // Random lane and obstacle type
+                const obstacleLane = Math.floor(Math.random() * 3);
+                const isHigh = Math.random() > 0.6; // 40% chance of high obstacle
+                
+                const texture = isHigh ? 'high_obstacle' : 'low_obstacle';
+                const obsY = this.lanes[obstacleLane] + (isHigh ? 20 : 40); // Adjust Y for obstacle size
+                
+                const obstacle = this.obstacles.create(this.nextObstacleX, obsY, texture);
+                obstacle.obstacleType = isHigh ? 'high' : 'low';
+                obstacle.obstacleLane = obstacleLane;
+                
+                if (isHigh) {
+                    obstacle.body.setSize(35, 75);
+                } else {
+                    obstacle.body.setSize(35, 35);
+                }
+                
+                obstacle.refreshBody();
+                console.log(`${texture} spawned in lane ${obstacleLane} at X:${obstacle.x}`);
+            }
+
+            spawnCoin() {
+                const coinLane = Math.floor(Math.random() * 3);
+                const coinY = this.lanes[coinLane] - 30; // Above the lane
+                
+                const coin = this.coins.create(this.nextCoinX, coinY, 'coin');
+                coin.body.setSize(25, 25);
+                
+                // Floating animation
+                this.tweens.add({
+                    targets: coin,
+                    y: coinY - 20,
+                    duration: 1000,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut'
+                });
+                
+                console.log(`Coin spawned in lane ${coinLane}`);
+            }
+
+            hitObstacle(player, obstacle) {
+                // Check if we can avoid the obstacle
+                if (obstacle.obstacleType === 'high' && this.isSliding) {
+                    console.log("Slid under high obstacle!");
+                    return; // No collision
+                }
+                
+                if (obstacle.obstacleType === 'low' && !this.player.body.touching.down) {
+                    console.log("Jumped over low obstacle!");
+                    return; // No collision
+                }
+                
+                // Check if we're in the same lane
+                const playerLane = this.currentLane;
+                const obstacleIsInPlayerLane = Math.abs(this.player.y - this.lanes[obstacle.obstacleLane]) < 30;
+                
+                if (!obstacleIsInPlayerLane) {
+                    console.log("Obstacle in different lane - safe!");
+                    return; // No collision if in different lane
+                }
+                
+                // Actual collision
+                console.log("Hit obstacle! Game Over!");
+                this.physics.pause();
+                this.player.setTint(0xff0000);
+                
+                const gameOverText = this.add.text(this.player.x, this.player.y - 100, 
+                    `GAME OVER!\nFinal Score: ${this.score}\nDistance: ${Math.floor(this.distance)}m\n\nPress R to Restart`, {
+                    fontSize: '24px',
+                    fill: '#ff0000',
+                    backgroundColor: '#fff',
+                    padding: { x: 15, y: 8 },
+                    align: 'center'
+                });
+                gameOverText.setOrigin(0.5);
+
+                this.rKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+                this.rKey.on('down', () => {
+                    this.scene.restart();
+                });
+            }
+
+            collectCoin(player, coin) {
+                coin.destroy();
+                this.score += 50;
+                console.log("Coin collected! +50 points");
+                
+                // Visual feedback
+                const bonusText = this.add.text(coin.x, coin.y, '+50', {
+                    fontSize: '16px',
+                    fill: '#FFD700',
+                    fontStyle: 'bold'
+                });
+                
+                this.tweens.add({
+                    targets: bonusText,
+                    y: coin.y - 50,
+                    alpha: 0,
+                    duration: 1000,
+                    onComplete: () => bonusText.destroy()
+                });
+            }
+
+            cleanupObjects() {
+                const cleanupDistance = this.player.x - 1000;
+
+                this.obstacles.children.entries.forEach(obstacle => {
+                    if (obstacle.x < cleanupDistance) {
+                        obstacle.destroy();
+                    }
+                });
+
+                this.coins.children.entries.forEach(coin => {
+                    if (coin.x < cleanupDistance) {
+                        coin.destroy();
+                    }
+                });
+            }
+        }
+
+        // Game configuration
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            parent: 'game-container',
+            backgroundColor: '#87CEEB',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 1500 },
+                    debug: false
+                }
+            },
+            scene: GameScene
+        };
+
+        console.log("Starting lane-based duck runner...");
+        const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>
