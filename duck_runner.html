@@ -62,15 +62,19 @@
             }
 
             createPlaceholderAssets() {
-                // Duck sprite (yellow with orange beak)
-                this.add.graphics()
-                    .fillStyle(0xFFFF00)
-                    .fillRect(0, 0, 40, 30)
-                    .fillStyle(0xFF8C00)
-                    .fillTriangle(0, 15, 15, 10, 15, 20)
-                    .fillStyle(0x000000)
-                    .fillCircle(30, 10, 3)
-                    .generateTexture('duck', 40, 30);
+                // Duck sprite (yellow with orange beak) - Fixed version
+                const graphics = this.add.graphics();
+                graphics.fillStyle(0xFFFF00); // Yellow body
+                graphics.fillRoundedRect(5, 8, 30, 20, 5);
+                graphics.fillStyle(0xFF8C00); // Orange beak
+                graphics.fillTriangle(0, 15, 12, 12, 12, 18);
+                graphics.fillStyle(0x000000); // Black eye
+                graphics.fillCircle(25, 12, 2);
+                graphics.fillStyle(0xFF0000); // Red feet
+                graphics.fillRect(15, 28, 4, 4);
+                graphics.fillRect(21, 28, 4, 4);
+                graphics.generateTexture('duck', 40, 32);
+                graphics.destroy();
 
                 // Ground tile (brown dirt)
                 this.add.graphics()
@@ -119,10 +123,12 @@
                 this.createGround();
 
                 // Create player duck
-                this.player = this.physics.add.sprite(100, 400, 'duck');
+                this.player = this.physics.add.sprite(100, 520, 'duck');
                 this.player.setBounce(0);
                 this.player.setCollideWorldBounds(true);
                 this.player.body.setSize(35, 25);
+                this.player.setScale(1.2); // Make duck slightly bigger
+                this.player.setDepth(10); // Ensure duck appears above other objects
 
                 // Player collisions
                 this.physics.add.collider(this.player, this.platforms);
@@ -149,6 +155,14 @@
                     backgroundColor: '#fff',
                     padding: { x: 8, y: 4 }
                 }).setOrigin(0.5, 0).setScrollFactor(0);
+
+                // Debug: Add a visible indicator for duck position
+                this.add.text(16, 80, 'Duck Position: ' + this.player.x + ', ' + this.player.y, {
+                    fontSize: '14px',
+                    fill: '#000',
+                    backgroundColor: '#ffff99',
+                    padding: { x: 5, y: 2 }
+                }).setScrollFactor(0);
             }
 
             createGround() {
