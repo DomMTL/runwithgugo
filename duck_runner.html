@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duck Runner - Endless Meme Adventure</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #87CEEB;
+            font-family: Arial, sans-serif;
+        }
+        #game-container {
+            border: 3px solid #333;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        .instructions {
+            text-align: center;
+            margin-bottom: 10px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <div class="instructions">
+            <h2>🦆 Duck Runner 🦆</h2>
+            <p>Press SPACEBAR to jump over obstacles! Collect coins for bonus points!</p>
+        </div>
+        <div id="game-container"></div>
+    </div>
+
+    <script>
+        class GameScene extends Phaser.Scene {
+            constructor() {
+                super({ key: 'GameScene' });
+                this.player = null;
+                this.platforms = null;
+                this.obstacles = null;
+                this.coins = null;
+                this.score = 0;
+                this.distance = 0;
+                this.scoreText = null;
+                this.gameSpeed = 200;
+                this.jumpPower = 600;
+                this.isJumping = false;
+                this.obstacleTimer = 0;
+                this.coinTimer = 0;
+                this.groundHeight = 100;
+            }
+
+            preload() {
+                // Create placeholder graphics for sprites
+                this.createPlaceholderAssets();
+            }
+
+            createPlaceholderAssets() {
+                // Duck sprite (yellow with orange beak)
+                this.add.graphics()
+                    .fillStyle(0xFFFF00)
+                    .fillRect(0, 0, 40, 30)
+                    .fillStyle(0xFF8C00)
+                    .fillTriangle(0, 15, 15, 10, 15, 20)
+                    .fillStyle(0x000000)
+                    .fillCircle(30, 10, 3)
+                    .generateTexture('duck', 40, 30);
+
+                // Ground tile (brown dirt)
+                this.add.graphics()
+                    .fillStyle(0x8B4513)
+                    .fillRect(0, 0, 64, 64)
+                    .fillStyle(0x654321)
+                    .fillRect(0, 0, 64, 8)
+                    .generateTexture('ground', 64, 64);
+
+                // Log obstacle (brown cylinder)
+                this.add.graphics()
+                    .fillStyle(0x8B4513)
+                    .fillRect(0, 0, 60, 25)
+                    .fillStyle(0x654321)
+                    .fillRect(0, 0, 60, 5)
+                    .fillRect(0, 20, 60, 5)
+                    .generateTexture('log', 60, 25);
+
+                // Rock obstacle (gray boulder)
+                this.add.graphics()
+                    .fillStyle(0x696969)
+                    .fillCircle(25, 25, 25)
+                    .fillStyle(0x808080)
+                    .fillCircle(20, 20, 8)
+                    .fillCircle(35, 15, 5)
+                    .generateTexture('rock', 50, 50);
+
+                // Coin (golden circle)
+                this.add.graphics()
+                    .fillStyle(0xFFD700)
+                    .fillCircle(15, 15, 15)
+                    .fillStyle(0xFFA500)
+                    .fillCircle(15, 15, 10)
+                    .fillStyle(0xFFD700)
+                    .fillCircle(15, 15, 5)
+                    .generateTexture('coin', 30, 30);
+            }
+
+            create() {
+                // Create physics groups
+                this.platforms = this.physics.add.staticGroup();
+                this.obstacles = this.physics.add.group();
+                this.coins = this.physics.add.group();
+
+                // Create scrolling ground
+                this.createGround();
+
+                // Create player duck
+                this.player = this.physics.add.sprite(100, 400, 'duck');
+                this.player.setBounce(0);
+                this.player.setCollideWorldBounds(true);
+                this.player.body.setSize(35, 25);
+
+                // Player collisions
+                this.physics.add.collider(this.player, this.platforms);
+                this.physics.add.collider(this.player, this.obstacles, this.hitObstacle, null, this);
+                this.physics.add.overlap(this.player, this.coins, this.collectCoin, null, this);
+
+                // Controls
+                this.cursors = this.input.keyboard.createCursorKeys();
+                this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+                // UI
+                this.scoreText = this.add.text(16, 16, 'Score: 0\nDistance: 0m', {
+                    fontSize: '18px',
+                    fill: '#000',
+                    backgroundColor: '#fff',
+                    padding: { x: 10, y: 5 }
+                });
+                this.scoreText.setScrollFactor(0);
+
+                // Game instructions
+                this.add.text(400, 50, 'Press SPACEBAR to Jump!', {
+                    fontSize: '16px',
+                    fill: '#333',
+                    backgroundColor: '#fff',
+                    padding: { x: 8, y: 4 }
+                }).setOrigin(0.5, 0).setScrollFactor(0);
+            }
+
+            createGround() {
+                // Create a series of ground tiles
+                for (let x = 0; x < 1600; x += 64) {
+                    const ground = this.platforms.create(x, 568, 'ground');
+                    ground.setScale(1).refreshBody();
+                }
+            }
+
+            update(time, delta) {
+                // Update distance and score
+                this.distance += this.gameSpeed * delta / 1000;
+                this.score = Math.floor(this.distance);
+
+                // Update UI
+                this.scoreText.setText(`Score: ${this.score}\nDistance: ${Math.floor(this.distance)}m`);
+
+                // Handle jumping
+                if (this.spaceKey.isDown && this.player.body.touching.down) {
+                    this.player.setVelocityY(-this.jumpPower);
+                    this.isJumping = true;
+                }
+
+                if (this.player.body.touching.down) {
+                    this.isJumping = false;
+                }
+
+                // Move world to the left (simulate player moving right)
+                this.cameras.main.scrollX += this.gameSpeed * delta / 1000;
+
+                // Extend ground as needed
+                this.extendGround();
+
+                // Spawn obstacles
+                this.obstacleTimer += delta;
+                if (this.obstacleTimer > 2000 + Math.random() * 2000) {
+                    this.spawnObstacle();
+                    this.obstacleTimer = 0;
+                }
+
+                // Spawn coins
+                this.coinTimer += delta;
+                if (this.coinTimer > 3000 + Math.random() * 4000) {
+                    this.spawnCoin();
+                    this.coinTimer = 0;
+                }
+
+                // Clean up old objects
+                this.cleanupObjects();
+
+                // Gradually increase speed
+                this.gameSpeed += delta * 0.01;
+            }
+
+            extendGround() {
+                const rightmostGround = this.platforms.children.entries
+                    .reduce((max, ground) => ground.x > max.x ? ground : max, { x: -Infinity });
+                
+                if (rightmostGround.x < this.cameras.main.scrollX + 1000) {
+                    for (let x = rightmostGround.x + 64; x < rightmostGround.x + 500; x += 64) {
+                        const ground = this.platforms.create(x, 568, 'ground');
+                        ground.setScale(1).refreshBody();
+                    }
+                }
+            }
+
+            spawnObstacle() {
+                const spawnX = this.cameras.main.scrollX + 900;
+                const obstacleType = Math.random() > 0.5 ? 'log' : 'rock';
+                let obstacle;
+
+                if (obstacleType === 'log') {
+                    obstacle = this.obstacles.create(spawnX, 543, 'log');
+                    obstacle.body.setSize(55, 20);
+                } else {
+                    obstacle = this.obstacles.create(spawnX, 518, 'rock');
+                    obstacle.body.setSize(45, 45);
+                }
+
+                obstacle.setVelocityX(-this.gameSpeed);
+                obstacle.body.setImmovable(true);
+            }
+
+            spawnCoin() {
+                const spawnX = this.cameras.main.scrollX + 900;
+                const coinHeight = 450 - Math.random() * 100; // Vary height
+                const coin = this.coins.create(spawnX, coinHeight, 'coin');
+                
+                coin.setVelocityX(-this.gameSpeed);
+                coin.body.setSize(25, 25);
+                
+                // Add floating animation
+                this.tweens.add({
+                    targets: coin,
+                    y: coinHeight - 20,
+                    duration: 1000,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut'
+                });
+
+                // Add rotation
+                this.tweens.add({
+                    targets: coin,
+                    rotation: Math.PI * 2,
+                    duration: 2000,
+                    repeat: -1,
+                    ease: 'Linear'
+                });
+            }
+
+            cleanupObjects() {
+                const leftBoundary = this.cameras.main.scrollX - 200;
+
+                // Clean up obstacles
+                this.obstacles.children.entries.forEach(obstacle => {
+                    if (obstacle.x < leftBoundary) {
+                        obstacle.destroy();
+                    }
+                });
+
+                // Clean up coins
+                this.coins.children.entries.forEach(coin => {
+                    if (coin.x < leftBoundary) {
+                        coin.destroy();
+                    }
+                });
+            }
+
+            hitObstacle() {
+                // Game over effect
+                this.physics.pause();
+                this.player.setTint(0xff0000);
+                
+                // Show game over text
+                const gameOverText = this.add.text(400, 250, 'GAME OVER!\nPress R to Restart', {
+                    fontSize: '32px',
+                    fill: '#ff0000',
+                    backgroundColor: '#fff',
+                    padding: { x: 20, y: 10 },
+                    align: 'center'
+                });
+                gameOverText.setOrigin(0.5);
+                gameOverText.setScrollFactor(0);
+
+                // Add restart functionality
+                this.rKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+                this.rKey.on('down', () => {
+                    this.scene.restart();
+                });
+            }
+
+            collectCoin(player, coin) {
+                coin.destroy();
+                this.score += 50; // Bonus points for collecting coins
+                
+                // Visual feedback
+                const bonusText = this.add.text(coin.x, coin.y, '+50', {
+                    fontSize: '16px',
+                    fill: '#FFD700',
+                    fontStyle: 'bold'
+                });
+                
+                this.tweens.add({
+                    targets: bonusText,
+                    y: coin.y - 50,
+                    alpha: 0,
+                    duration: 1000,
+                    onComplete: () => bonusText.destroy()
+                });
+            }
+        }
+
+        // Game configuration
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            parent: 'game-container',
+            backgroundColor: '#87CEEB',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 1500 },
+                    debug: false
+                }
+            },
+            scene: GameScene
+        };
+
+        // Start the game
+        const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>
