@@ -31,8 +31,9 @@
 <body>
     <div>
         <div class="instructions">
-            <h2>🦆 Duck Runner - Working Version 🦆</h2>
-            <p>SPACE: Jump | UP/DOWN: Switch Lanes | HOLD DOWN: Slide</p>
+            <h2>🦆 Duck Runner - Advanced Edition 🦆</h2>
+            <p>SPACE: Jump/Double Jump | HOLD DOWN: Slide | G: Gamble</p>
+            <p>🧲 Green = Magnet | 🛡️ Blue = Shield | 🎰 Purple = Gamble Orb</p>
         </div>
         <div id="game-container"></div>
     </div>
@@ -57,12 +58,15 @@
                 this.nextObstacleX = 600;
                 this.nextCoinX = 400;
                 
-                // Lane system
-                this.lanes = [450, 520, 590];
-                this.currentLane = 1; // Start in middle lane
-                
-                // Mechanics
+                // Advanced mechanics (no lanes)
                 this.isSliding = false;
+                this.hasDoubleJump = true;
+                this.isInvincible = false;
+                this.magnetActive = false;
+                this.nextPowerUpX = 1000;
+                this.nextGambleX = 1500;
+                this.powerUps = null;
+                this.gambleOrbs = null;
             }
 
             preload() {
@@ -103,6 +107,50 @@
                     .fillStyle(0xFFD700)
                     .fillCircle(15, 15, 15)
                     .generateTexture('coin', 30, 30);
+
+                // Flying obstacle (horizontal bar)
+                this.add.graphics()
+                    .fillStyle(0xFF0000)
+                    .fillRect(0, 0, 50, 20)
+                    .generateTexture('flying_obstacle', 50, 20);
+
+                // Power-ups: Magnet (green square)
+                this.add.graphics()
+                    .fillStyle(0x00FF00)
+                    .fillRect(0, 0, 30, 30)
+                    .fillStyle(0x004400)
+                    .fillRect(5, 5, 20, 20)
+                    .generateTexture('magnet', 30, 30);
+
+                // Power-ups: Shield (blue circle)
+                this.add.graphics()
+                    .fillStyle(0x0000FF)
+                    .fillCircle(15, 15, 15)
+                    .fillStyle(0x4444FF)
+                    .fillCircle(15, 15, 10)
+                    .generateTexture('shield', 30, 30);
+
+                // Gamble orb (magenta circle)
+                this.add.graphics()
+                    .fillStyle(0xFF00FF)
+                    .fillCircle(15, 15, 15)
+                    .fillStyle(0xFF44FF)
+                    .fillCircle(15, 15, 10)
+                    .generateTexture('gamble_orb', 30, 30);
+
+                // Clouds (puffy white clouds)
+                this.add.graphics()
+                    .fillStyle(0xFFFFFF)
+                    .fillCircle(50, 50, 50)
+                    .fillCircle(80, 60, 30)
+                    .fillCircle(30, 60, 30)
+                    .generateTexture('cloud', 100, 100);
+
+                // Particle (yellow dot for effects)
+                this.add.graphics()
+                    .fillStyle(0xFFFF00)
+                    .fillCircle(5, 5, 5)
+                    .generateTexture('particle', 10, 10);
             }
 
             create() {
@@ -113,12 +161,14 @@
                 this.platforms = this.physics.add.staticGroup();
                 this.obstacles = this.physics.add.staticGroup();
                 this.coins = this.physics.add.group();
+                this.powerUps = this.physics.add.group();
+                this.gambleOrbs = this.physics.add.group();
 
                 // Create ground
                 this.createGround();
 
-                // Create player duck
-                this.player = this.physics.add.sprite(100, this.lanes[this.currentLane], 'duck');
+                // Create player duck (single path, no lanes)
+                this.player = this.physics.add.sprite(100, 500, 'duck');
                 this.player.setBounce(0);
                 this.player.setCollideWorldBounds(true);
                 this.player.body.setSize(45, 35);
@@ -129,11 +179,25 @@
                 this.physics.add.collider(this.player, this.platforms);
                 this.physics.add.collider(this.player, this.obstacles, this.hitObstacle, null, this);
                 this.physics.add.overlap(this.player, this.coins, this.collectCoin, null, this);
+                this.physics.add.overlap(this.player, this.powerUps, this.collectPowerUp, null, this);
+                this.physics.add.overlap(this.player, this.gambleOrbs, this.triggerGamble, null, this);
 
                 // Controls
                 this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-                this.upKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
                 this.downKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
+                this.gKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.G);
+
+                // Parallax backgrounds
+                this.hills = this.add.tileSprite(0, 300, 800, 300, 'ground').setScrollFactor(0.5);
+                this.clouds = this.add.tileSprite(0, 100, 800, 200, 'cloud').setScrollFactor(0.2);
+
+                // Particle system for effects
+                this.emitter = this.add.particles(0, 0, 'particle', { 
+                    speed: 100, 
+                    lifespan: 500, 
+                    quantity: 10, 
+                    scale: { start: 1, end: 0 } 
+                });
 
                 // Camera
                 this.cameras.main.startFollow(this.player);
@@ -153,7 +217,7 @@
 
             createGround() {
                 for (let x = 0; x < 10000; x += 64) {
-                    const ground = this.platforms.create(x, 630, 'ground');
+                    const ground = this.platforms.create(x, 568, 'ground');
                     ground.setScale(1).refreshBody();
                 }
             }
@@ -164,28 +228,12 @@
                 this.score = Math.floor(this.distance / 10);
                 
                 // Update UI
-                this.scoreText.setText(`Score: ${this.score}\nDistance: ${Math.floor(this.distance)}m\nLane: ${this.currentLane + 1}/3`);
-
-                // Lane switching
-                if (Phaser.Input.Keyboard.JustDown(this.upKey) && this.currentLane > 0) {
-                    this.currentLane--;
-                    this.tweens.add({
-                        targets: this.player,
-                        y: this.lanes[this.currentLane],
-                        duration: 200,
-                        ease: 'Power2'
-                    });
-                }
-
-                if (Phaser.Input.Keyboard.JustDown(this.downKey) && this.currentLane < 2) {
-                    this.currentLane++;
-                    this.tweens.add({
-                        targets: this.player,
-                        y: this.lanes[this.currentLane],
-                        duration: 200,
-                        ease: 'Power2'
-                    });
-                }
+                let statusText = `Score: ${this.score}\nDistance: ${Math.floor(this.distance)}m`;
+                if (!this.hasDoubleJump) statusText += '\n✈️ Used Double Jump';
+                if (this.isInvincible) statusText += '\n🛡️ Shield Active';
+                if (this.magnetActive) statusText += '\n🧲 Magnet Active';
+                if (this.isSliding) statusText += '\n🏃 Sliding';
+                this.scoreText.setText(statusText);
 
                 // Sliding
                 if (this.downKey.isDown && this.player.body.touching.down && !this.isSliding) {
@@ -197,9 +245,42 @@
                     this.player.setVelocityY(-this.jumpPower);
                 }
 
+                // Double jump
+                if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && !this.player.body.touching.down && this.hasDoubleJump) {
+                    this.player.setVelocityY(-this.jumpPower * 0.7);
+                    this.hasDoubleJump = false;
+                    this.emitter.explode(10, this.player.x, this.player.y);
+                    console.log("Double jump activated!");
+                }
+
+                // Reset double jump when landing
+                if (this.player.body.touching.down) {
+                    this.hasDoubleJump = true;
+                }
+
                 // Keep moving forward
                 if (this.player.body.velocity.x < this.gameSpeed) {
                     this.player.setVelocityX(this.gameSpeed);
+                }
+
+                // Parallax background scrolling
+                this.hills.tilePositionX += this.gameSpeed * 0.0005 * delta;
+                this.clouds.tilePositionX += this.gameSpeed * 0.0002 * delta;
+
+                // Magnet: Attract nearby coins
+                if (this.magnetActive) {
+                    this.coins.children.entries.forEach(coin => {
+                        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, coin.x, coin.y);
+                        if (distance < 150) {
+                            this.tweens.add({ 
+                                targets: coin, 
+                                x: this.player.x, 
+                                y: this.player.y, 
+                                duration: 300,
+                                ease: 'Power2'
+                            });
+                        }
+                    });
                 }
 
                 // Spawn obstacles
@@ -212,6 +293,18 @@
                 if (this.player.x > this.nextCoinX - 300) {
                     this.spawnCoin();
                     this.nextCoinX = this.player.x + 200 + Math.random() * 400;
+                }
+
+                // Spawn power-ups
+                if (this.player.x > this.nextPowerUpX - 400) {
+                    this.spawnPowerUp();
+                    this.nextPowerUpX = this.player.x + 1000 + Math.random() * 2000;
+                }
+
+                // Spawn gamble orbs
+                if (this.player.x > this.nextGambleX - 400) {
+                    this.spawnGambleOrb();
+                    this.nextGambleX = this.player.x + 1500 + Math.random() * 3000;
                 }
 
                 // Clean up
@@ -234,28 +327,41 @@
             }
 
             spawnObstacle() {
-                const obstacleLane = Math.floor(Math.random() * 3);
-                const isHigh = Math.random() > 0.5;
+                // Random obstacle type with varied spawning
+                const type = Math.random();
+                let texture, obsY = 528, obstacleType;
                 
-                const texture = isHigh ? 'high_obstacle' : 'low_obstacle';
-                const obsY = this.lanes[obstacleLane] + (isHigh ? 20 : 40);
+                if (type < 0.4) { 
+                    texture = 'low_obstacle'; 
+                    obstacleType = 'low'; 
+                } else if (type < 0.8) { 
+                    texture = 'high_obstacle'; 
+                    obsY = 488; 
+                    obstacleType = 'high'; 
+                } else { 
+                    texture = 'flying_obstacle'; 
+                    obsY = 400 + Math.random() * 100; 
+                    obstacleType = 'flying'; 
+                }
                 
                 const obstacle = this.obstacles.create(this.nextObstacleX, obsY, texture);
-                obstacle.obstacleType = isHigh ? 'high' : 'low';
-                obstacle.obstacleLane = obstacleLane;
+                obstacle.obstacleType = obstacleType;
                 
-                if (isHigh) {
+                // Set collision box based on type
+                if (obstacleType === 'high') {
                     obstacle.body.setSize(35, 75);
+                } else if (obstacleType === 'flying') {
+                    obstacle.body.setSize(45, 18);
                 } else {
                     obstacle.body.setSize(35, 35);
                 }
                 
                 obstacle.refreshBody();
+                console.log(`${texture} (${obstacleType}) spawned at Y:${obsY}`);
             }
 
             spawnCoin() {
-                const coinLane = Math.floor(Math.random() * 3);
-                const coinY = this.lanes[coinLane] - 30;
+                const coinY = 400 + Math.random() * 100; // Random height between 400-500
                 
                 const coin = this.coins.create(this.nextCoinX, coinY, 'coin');
                 coin.body.setSize(25, 25);
@@ -270,21 +376,168 @@
                 });
             }
 
+            spawnPowerUp() {
+                const type = Math.random() > 0.5 ? 'magnet' : 'shield';
+                const powerUpY = 450 + Math.random() * 50; // Random height
+                const powerUp = this.powerUps.create(this.nextPowerUpX, powerUpY, type);
+                powerUp.powerType = type;
+                powerUp.body.setSize(25, 25);
+                
+                // Add glowing pulse effect
+                this.tweens.add({
+                    targets: powerUp,
+                    scaleX: 1.3,
+                    scaleY: 1.3,
+                    duration: 800,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut'
+                });
+                
+                console.log(`${type} power-up spawned`);
+            }
+
+            collectPowerUp(player, powerUp) {
+                powerUp.destroy();
+                this.emitter.explode(20, player.x, player.y); // Sparkles
+                
+                if (powerUp.powerType === 'magnet') {
+                    this.magnetActive = true;
+                    this.time.delayedCall(5000, () => {
+                        this.magnetActive = false;
+                        console.log("Magnet deactivated");
+                    });
+                    console.log("Magnet activated for 5 seconds!");
+                } else if (powerUp.powerType === 'shield') {
+                    this.isInvincible = true;
+                    player.setTint(0x00FF00); // Green tint
+                    this.time.delayedCall(3000, () => {
+                        this.isInvincible = false;
+                        player.clearTint();
+                        console.log("Shield deactivated");
+                    });
+                    console.log("Shield activated for 3 seconds!");
+                }
+                
+                this.score += 100; // Bonus points
+            }
+
+            spawnGambleOrb() {
+                const orbY = 450 + Math.random() * 50; // Random height
+                const orb = this.gambleOrbs.create(this.nextGambleX, orbY, 'gamble_orb');
+                orb.body.setSize(25, 25);
+                
+                // Float animation
+                this.tweens.add({
+                    targets: orb,
+                    y: orbY - 20,
+                    duration: 1000,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut'
+                });
+                
+                // Add rotation
+                this.tweens.add({
+                    targets: orb,
+                    rotation: Math.PI * 2,
+                    duration: 2000,
+                    repeat: -1,
+                    ease: 'Linear'
+                });
+                
+                console.log("Gamble orb spawned");
+            }
+
+            triggerGamble(player, orb) {
+                orb.destroy();
+                
+                // Show gamble prompt
+                const gambleText = this.add.text(player.x, player.y - 50, 'Press G to Gamble!\n(Double or Half Score)', {
+                    fontSize: '16px',
+                    fill: '#FF00FF',
+                    backgroundColor: '#FFFFFF',
+                    padding: { x: 8, y: 4 },
+                    align: 'center'
+                });
+                
+                // Auto-remove prompt after 3 seconds
+                this.time.delayedCall(3000, () => {
+                    if (gambleText && gambleText.active) {
+                        gambleText.destroy();
+                    }
+                });
+                
+                // Listen for G key
+                const gambleHandler = () => {
+                    if (this.gKey.isDown) {
+                        const win = Math.random() < 0.45; // 45% win rate (10% house edge)
+                        
+                        if (win) {
+                            this.score = Math.floor(this.score * 2);
+                            this.emitter.explode(30, player.x, player.y); // Success sparkles
+                            
+                            const winText = this.add.text(player.x, player.y - 80, 'GAMBLE WIN!\nScore Doubled!', {
+                                fontSize: '18px',
+                                fill: '#00FF00',
+                                fontStyle: 'bold'
+                            });
+                            this.tweens.add({
+                                targets: winText,
+                                y: player.y - 120,
+                                alpha: 0,
+                                duration: 2000,
+                                onComplete: () => winText.destroy()
+                            });
+                            
+                            console.log("Gamble win! Score doubled to:", this.score);
+                        } else {
+                            this.score = Math.floor(this.score / 2);
+                            this.emitter.explode(15, player.x, player.y); // Failure explosion
+                            
+                            const loseText = this.add.text(player.x, player.y - 80, 'GAMBLE LOSE!\nScore Halved!', {
+                                fontSize: '18px',
+                                fill: '#FF0000',
+                                fontStyle: 'bold'
+                            });
+                            this.tweens.add({
+                                targets: loseText,
+                                y: player.y - 120,
+                                alpha: 0,
+                                duration: 2000,
+                                onComplete: () => loseText.destroy()
+                            });
+                            
+                            console.log("Gamble lose! Score halved to:", this.score);
+                        }
+                        
+                        gambleText.destroy();
+                        this.input.keyboard.off('keydown-G', gambleHandler);
+                    }
+                };
+                
+                this.input.keyboard.on('keydown-G', gambleHandler);
+                console.log("Gamble orb triggered! Press G to gamble.");
+            }
+
             hitObstacle(player, obstacle) {
-                // Check avoidance
+                // Check if invincible (shield power-up)
+                if (this.isInvincible) {
+                    console.log("Shield protected from obstacle!");
+                    obstacle.destroy();
+                    this.emitter.explode(15, obstacle.x, obstacle.y); // Destruction effect
+                    return; // No collision
+                }
+                
+                // Check avoidance mechanics
                 if (obstacle.obstacleType === 'high' && this.isSliding) {
+                    console.log("Slid under high obstacle!");
                     return; // Avoided
                 }
                 
-                if (obstacle.obstacleType === 'low' && !this.player.body.touching.down) {
+                if ((obstacle.obstacleType === 'low' || obstacle.obstacleType === 'flying') && !this.player.body.touching.down) {
+                    console.log("Jumped over low/flying obstacle!");
                     return; // Avoided
-                }
-                
-                // Check if in same lane
-                const obstacleIsInPlayerLane = Math.abs(this.player.y - this.lanes[obstacle.obstacleLane]) < 40;
-                
-                if (!obstacleIsInPlayerLane) {
-                    return; // Safe
                 }
                 
                 // Game over
@@ -324,6 +577,18 @@
                 this.coins.children.entries.forEach(coin => {
                     if (coin.x < cleanupDistance) {
                         coin.destroy();
+                    }
+                });
+
+                this.powerUps.children.entries.forEach(powerUp => {
+                    if (powerUp.x < cleanupDistance) {
+                        powerUp.destroy();
+                    }
+                });
+
+                this.gambleOrbs.children.entries.forEach(orb => {
+                    if (orb.x < cleanupDistance) {
+                        orb.destroy();
                     }
                 });
             }
