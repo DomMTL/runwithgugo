@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIMPLE DUCK TEST</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #87CEEB;
+            font-family: Arial, sans-serif;
+        }
+        #game-container {
+            border: 5px solid #ff0000;
+            background: white;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <h2>🚨 SIMPLE DUCK VISIBILITY TEST 🚨</h2>
+        <p>Look for GIANT YELLOW SQUARE in center!</p>
+        <div id="game-container"></div>
+    </div>
+
+    <script>
+        class TestScene extends Phaser.Scene {
+            constructor() {
+                super({ key: 'TestScene' });
+            }
+
+            preload() {
+                console.log("=== CREATING DUCK TEXTURE ===");
+                
+                // Create the most obvious duck possible
+                this.add.graphics()
+                    .fillStyle(0xFFFF00)  // Bright yellow
+                    .fillRect(0, 0, 100, 80)  // HUGE rectangle
+                    .generateTexture('duck', 100, 80);
+                
+                console.log("Duck texture created successfully");
+            }
+
+            create() {
+                console.log("=== CREATING SCENE ===");
+                
+                // Add background color
+                this.add.rectangle(400, 300, 800, 600, 0x87CEEB);
+                
+                // Add ground - simple brown rectangle at bottom
+                this.add.rectangle(400, 550, 800, 100, 0x8B4513);
+                
+                // Create duck in CENTER of screen
+                this.duck = this.add.sprite(400, 300, 'duck');
+                this.duck.setScale(1);
+                
+                console.log("=== DUCK INFO ===");
+                console.log("Duck position:", this.duck.x, this.duck.y);
+                console.log("Duck visible:", this.duck.visible);
+                console.log("Duck alpha:", this.duck.alpha);
+                console.log("Duck scale:", this.duck.scale);
+                console.log("Duck texture key:", this.duck.texture.key);
+                
+                // Add text directly on top of duck
+                this.add.text(400, 200, 'DUCK SHOULD BE HERE ↓', {
+                    fontSize: '24px',
+                    fill: '#ff0000',
+                    backgroundColor: '#ffffff'
+                }).setOrigin(0.5);
+                
+                // Add coordinates text
+                this.add.text(400, 400, 'Duck at: ' + this.duck.x + ', ' + this.duck.y, {
+                    fontSize: '20px',
+                    fill: '#000000',
+                    backgroundColor: '#ffff00'
+                }).setOrigin(0.5);
+                
+                // Add corner markers to confirm screen area
+                this.add.text(10, 10, 'TOP-LEFT', { fill: '#ff0000', backgroundColor: '#ffffff' });
+                this.add.text(790, 10, 'TOP-RIGHT', { fill: '#ff0000', backgroundColor: '#ffffff' }).setOrigin(1, 0);
+                this.add.text(10, 590, 'BOTTOM-LEFT', { fill: '#ff0000', backgroundColor: '#ffffff' }).setOrigin(0, 1);
+                this.add.text(790, 590, 'BOTTOM-RIGHT', { fill: '#ff0000', backgroundColor: '#ffffff' }).setOrigin(1, 1);
+                
+                // Test controls
+                this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+                
+                console.log("Scene created - duck should be visible now!");
+            }
+            
+            update() {
+                // Make duck move up/down when spacebar pressed
+                if (this.spaceKey.isDown) {
+                    this.duck.y -= 2;
+                    console.log("Spacebar pressed - duck moving to:", this.duck.x, this.duck.y);
+                } else {
+                    if (this.duck.y < 300) {
+                        this.duck.y += 1;
+                    }
+                }
+            }
+        }
+
+        // Minimal config
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            parent: 'game-container',
+            backgroundColor: '#ffffff',  // White background
+            scene: TestScene
+        };
+
+        console.log("=== STARTING PHASER ===");
+        const game = new Phaser.Game(config);
+        
+        // Test after 1 second
+        setTimeout(() => {
+            console.log("=== 1 SECOND TEST ===");
+            console.log("Game running:", game.isRunning);
+            console.log("Scene active:", game.scene.isActive('TestScene'));
+        }, 1000);
+    </script>
+</body>
+</html>
