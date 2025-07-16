@@ -92,8 +92,8 @@
             }
 
             create() {
-                // Create physics groups
-                this.platforms = this.physics.add.staticGroup();
+                // Create physics groups - use regular group for platforms so they can move
+                this.platforms = this.physics.add.group();
                 this.obstacles = this.physics.add.group();
                 this.coins = this.physics.add.group();
 
@@ -101,13 +101,14 @@
                 this.createGround();
 
                 // Create player duck - KEEP IN FIXED POSITION ON SCREEN
-                this.player = this.physics.add.sprite(150, 450, 'duck');
+                this.player = this.physics.add.sprite(150, 500, 'duck');
                 this.player.setBounce(0);
                 this.player.setCollideWorldBounds(false); // Don't constrain to world
                 this.player.body.setSize(45, 35);
                 this.player.setScale(1.2);
 
                 console.log("Duck created at:", this.player.x, this.player.y);
+                console.log("Ground is at y=568, duck is at y=500");
 
                 // Collisions
                 this.physics.add.collider(this.player, this.platforms);
@@ -141,7 +142,9 @@
                 // Create ground extending far to the right
                 for (let x = -200; x < 2000; x += 64) {
                     const ground = this.platforms.create(x, 568, 'ground');
-                    ground.setScale(1).refreshBody();
+                    ground.setScale(1);
+                    ground.body.setImmovable(true); // Make immovable but still moveable
+                    ground.body.velocity.x = -this.gameSpeed;
                 }
             }
 
@@ -149,7 +152,7 @@
                 // Update score based on time
                 this.distance += this.gameSpeed * delta / 1000;
                 this.score = Math.floor(this.distance);
-                this.scoreText.setText(`Score: ${this.score}\nDistance: ${Math.floor(this.distance)}m`);
+                this.scoreText.setText(`Score: ${this.score}\nDistance: ${Math.floor(this.distance)}m\nDuck Y: ${Math.round(this.player.y)}\nOn Ground: ${this.player.body.touching.down}`);
 
                 // Handle jumping
                 if (this.spaceKey.isDown && this.player.body.touching.down) {
@@ -157,22 +160,22 @@
                     console.log("Duck jumped!");
                 }
 
-                // Move world objects LEFT (simulates player moving right)
+                // Move world objects LEFT using physics velocity (maintains collision)
                 this.worldX += this.gameSpeed * delta / 1000;
 
-                // Move all platforms
+                // Move all platforms using velocity (preserves physics)
                 this.platforms.children.entries.forEach(platform => {
-                    platform.x -= this.gameSpeed * delta / 1000;
+                    platform.body.velocity.x = -this.gameSpeed;
                 });
 
-                // Move all obstacles  
+                // Move all obstacles using velocity
                 this.obstacles.children.entries.forEach(obstacle => {
-                    obstacle.x -= this.gameSpeed * delta / 1000;
+                    obstacle.body.velocity.x = -this.gameSpeed;
                 });
 
-                // Move all coins
+                // Move all coins using velocity
                 this.coins.children.entries.forEach(coin => {
-                    coin.x -= this.gameSpeed * delta / 1000;
+                    coin.body.velocity.x = -this.gameSpeed;
                 });
 
                 // Extend ground to the right
@@ -206,7 +209,9 @@
                 if (rightmostGround.x < 1000) {
                     for (let x = rightmostGround.x + 64; x < rightmostGround.x + 500; x += 64) {
                         const ground = this.platforms.create(x, 568, 'ground');
-                        ground.setScale(1).refreshBody();
+                        ground.setScale(1);
+                        ground.body.setImmovable(true);
+                        ground.body.velocity.x = -this.gameSpeed;
                     }
                 }
             }
@@ -215,6 +220,7 @@
                 const obstacle = this.obstacles.create(900, 528, 'obstacle');
                 obstacle.body.setSize(35, 35);
                 obstacle.body.setImmovable(true);
+                obstacle.body.velocity.x = -this.gameSpeed; // Set initial velocity
                 console.log("Obstacle spawned at", obstacle.x);
             }
 
@@ -222,6 +228,7 @@
                 const coinHeight = 400 - Math.random() * 80;
                 const coin = this.coins.create(900, coinHeight, 'coin');
                 coin.body.setSize(25, 25);
+                coin.body.velocity.x = -this.gameSpeed; // Set initial velocity
                 
                 // Add floating animation
                 this.tweens.add({
