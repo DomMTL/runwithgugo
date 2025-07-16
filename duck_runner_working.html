@@ -56,8 +56,8 @@
                 this.jumpPower = 600;
                 this.obstacleTimer = 0;
                 this.coinTimer = 0;
-                this.nextObstacleX = 400; // First obstacle at 400 pixels (duck starts at 100)
-                this.nextCoinX = 500; // First coin at 500 pixels
+                this.nextObstacleX = 800; // First obstacle at 800 pixels (duck starts at 100)
+                this.nextCoinX = 400; // First coin at 400 pixels
                 console.log("Game variables reset - Speed:", this.gameSpeed);
             }
 
@@ -180,17 +180,17 @@
                     this.player.setVelocityX(this.gameSpeed);
                 }
 
-                // Spawn obstacles based on duck position
-                if (this.player.x > this.nextObstacleX - 400) {
+                // Spawn obstacles based on duck position (much more spaced out)
+                if (this.player.x > this.nextObstacleX - 200) {
                     this.spawnObstacle();
-                    this.nextObstacleX = this.player.x + 300 + Math.random() * 400; // Next obstacle 300-700 pixels ahead
+                    this.nextObstacleX = this.player.x + 600 + Math.random() * 800; // Next obstacle 600-1400 pixels ahead
                     console.log("Next obstacle will be at:", this.nextObstacleX);
                 }
 
-                // Spawn coins based on duck position  
-                if (this.player.x > this.nextCoinX - 400) {
+                // Spawn coins based on duck position (more frequent than obstacles)
+                if (this.player.x > this.nextCoinX - 200) {
                     this.spawnCoin();
-                    this.nextCoinX = this.player.x + 400 + Math.random() * 600; // Next coin 400-1000 pixels ahead
+                    this.nextCoinX = this.player.x + 300 + Math.random() * 500; // Next coin 300-800 pixels ahead
                     console.log("Next coin will be at:", this.nextCoinX);
                 }
 
