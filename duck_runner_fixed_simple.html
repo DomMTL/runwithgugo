@@ -67,6 +67,7 @@
                 this.nextGambleX = 1500;
                 this.powerUps = null;
                 this.gambleOrbs = null;
+                this.betPlaced = false;
             }
 
             preload() {
@@ -138,13 +139,25 @@
                     .fillCircle(15, 15, 10)
                     .generateTexture('gamble_orb', 30, 30);
 
-                // Clouds (puffy white clouds)
+                // Improved cloud (larger, more puffy)
                 this.add.graphics()
                     .fillStyle(0xFFFFFF)
-                    .fillCircle(50, 50, 50)
-                    .fillCircle(80, 60, 30)
-                    .fillCircle(30, 60, 30)
-                    .generateTexture('cloud', 100, 100);
+                    .fillCircle(100, 100, 80)
+                    .fillCircle(150, 110, 60)
+                    .fillCircle(60, 110, 60)
+                    .fillCircle(100, 60, 70)
+                    .fillCircle(130, 80, 50)
+                    .generateTexture('cloud', 200, 200);
+
+                // Improved hill (green layered)
+                this.add.graphics()
+                    .fillStyle(0x32CD32)
+                    .fillRoundedRect(0, 0, 200, 100, 30)
+                    .fillStyle(0x228B22)
+                    .fillRoundedRect(20, 20, 160, 80, 20)
+                    .fillStyle(0x006400)
+                    .fillRoundedRect(50, 40, 100, 60, 10)
+                    .generateTexture('hill', 200, 100);
 
                 // Particle (yellow dot for effects)
                 this.add.graphics()
@@ -187,9 +200,9 @@
                 this.downKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
                 this.gKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.G);
 
-                // Parallax backgrounds
-                this.hills = this.add.tileSprite(0, 300, 800, 300, 'ground').setScrollFactor(0.5);
-                this.clouds = this.add.tileSprite(0, 100, 800, 200, 'cloud').setScrollFactor(0.2);
+                // Parallax backgrounds (wide for infinite, no manual tilePosition)
+                this.clouds = this.add.tileSprite(0, 0, 10000, 600, 'cloud').setScrollFactor(0.2);
+                this.hills = this.add.tileSprite(0, 400, 10000, 200, 'hill').setScrollFactor(0.5);
 
                 // Particle system for effects
                 this.emitter = this.add.particles(0, 0, 'particle', { 
@@ -199,9 +212,61 @@
                     scale: { start: 1, end: 0 } 
                 });
 
+                // Pre-run bet modal (pause until bet)
+                this.physics.pause();
+                const betModal = this.add.rectangle(400, 300, 400, 200, 0xFFFFFF).setScrollFactor(0);
+                betModal.setStrokeStyle(3, 0x000000);
+                const betText = this.add.text(400, 250, 'Bet 0.01 ETH to double if >1000m? (7% edge)', {
+                    fontSize: '20px', 
+                    fill: '#000',
+                    align: 'center'
+                }).setOrigin(0.5).setScrollFactor(0);
+                const betButton = this.add.text(400, 320, '💰 Place Bet', {
+                    fontSize: '24px', 
+                    fill: '#00FF00',
+                    backgroundColor: '#FFFF00',
+                    padding: { x: 10, y: 5 }
+                }).setOrigin(0.5).setScrollFactor(0).setInteractive();
+                const skipButton = this.add.text(400, 360, 'Skip Bet', {
+                    fontSize: '18px', 
+                    fill: '#666666',
+                    backgroundColor: '#DDDDDD',
+                    padding: { x: 8, y: 4 }
+                }).setOrigin(0.5).setScrollFactor(0).setInteractive();
+
+                betButton.on('pointerdown', () => {
+                    this.betPlaced = true;
+                    betModal.destroy(); 
+                    betText.destroy(); 
+                    betButton.destroy();
+                    skipButton.destroy();
+                    this.physics.resume();
+                    console.log("Bet placed! Game started.");
+                });
+
+                skipButton.on('pointerdown', () => {
+                    this.betPlaced = false;
+                    betModal.destroy(); 
+                    betText.destroy(); 
+                    betButton.destroy();
+                    skipButton.destroy();
+                    this.physics.resume();
+                    console.log("Bet skipped! Game started.");
+                });
+
                 // Camera
                 this.cameras.main.startFollow(this.player);
                 this.cameras.main.setFollowOffset(-200, 0);
+
+                // Duck run bob animation
+                this.tweens.add({
+                    targets: this.player,
+                    y: this.player.y + 5,
+                    duration: 300,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut'
+                });
 
                 // UI
                 this.scoreText = this.add.text(16, 16, 'Score: 0', {
@@ -212,7 +277,7 @@
                 });
                 this.scoreText.setScrollFactor(0);
 
-                console.log("Game started successfully!");
+                console.log("Game setup complete - waiting for bet decision!");
             }
 
             createGround() {
@@ -227,12 +292,19 @@
                 this.distance = Math.max(0, this.player.x - 100);
                 this.score = Math.floor(this.distance / 10);
                 
+                // Update high score
+                const highScore = localStorage.getItem('highScore') || 0;
+                if (this.score > highScore) {
+                    localStorage.setItem('highScore', this.score);
+                }
+
                 // Update UI
                 let statusText = `Score: ${this.score}\nDistance: ${Math.floor(this.distance)}m`;
                 if (!this.hasDoubleJump) statusText += '\n✈️ Used Double Jump';
                 if (this.isInvincible) statusText += '\n🛡️ Shield Active';
                 if (this.magnetActive) statusText += '\n🧲 Magnet Active';
                 if (this.isSliding) statusText += '\n🏃 Sliding';
+                statusText += `\nHigh Score: ${highScore}`;
                 this.scoreText.setText(statusText);
 
                 // Sliding
@@ -262,10 +334,6 @@
                 if (this.player.body.velocity.x < this.gameSpeed) {
                     this.player.setVelocityX(this.gameSpeed);
                 }
-
-                // Parallax background scrolling
-                this.hills.tilePositionX += this.gameSpeed * 0.0005 * delta;
-                this.clouds.tilePositionX += this.gameSpeed * 0.0002 * delta;
 
                 // Magnet: Attract nearby coins
                 if (this.magnetActive) {
@@ -471,7 +539,7 @@
                 // Listen for G key
                 const gambleHandler = () => {
                     if (this.gKey.isDown) {
-                        const win = Math.random() < 0.45; // 45% win rate (10% house edge)
+                        const win = Math.random() < 0.29; // ~7% house edge (EV ≈0.93)
                         
                         if (win) {
                             this.score = Math.floor(this.score * 2);
@@ -529,18 +597,26 @@
                     return; // No collision
                 }
                 
-                // Check avoidance mechanics
-                if (obstacle.obstacleType === 'high' && this.isSliding) {
+                // Check avoidance mechanics with tolerance
+                const verticalDiff = Math.abs(player.y - obstacle.y);
+                if (obstacle.obstacleType === 'high' && this.isSliding && verticalDiff < 20) {
                     console.log("Slid under high obstacle!");
                     return; // Avoided
                 }
                 
-                if ((obstacle.obstacleType === 'low' || obstacle.obstacleType === 'flying') && !this.player.body.touching.down) {
+                if ((obstacle.obstacleType === 'low' || obstacle.obstacleType === 'flying') && !player.body.touching.down && verticalDiff > 20) {
                     console.log("Jumped over low/flying obstacle!");
                     return; // Avoided
                 }
                 
-                // Game over
+                // Game over with bet resolution
+                if (this.betPlaced) {
+                    if (this.distance > 1000 && Math.random() < 0.93) { // 93% payout prob for edge
+                        console.log("Bet won! Double ETH (placeholder)");
+                    } else {
+                        console.log("Bet lost");
+                    }
+                }
                 this.physics.pause();
                 this.player.setTint(0xff0000);
                 
@@ -563,6 +639,8 @@
             collectCoin(player, coin) {
                 coin.destroy();
                 this.score += 50;
+                this.emitter.explode(10, coin.x, coin.y); // Sparkles
+                console.log("Coin collected with sparkles!");
             }
 
             cleanupObjects() {
@@ -603,7 +681,7 @@
             physics: {
                 default: 'arcade',
                 arcade: {
-                    gravity: { y: 1500 },
+                    gravity: { y: 1000 },
                     debug: false
                 }
             },
