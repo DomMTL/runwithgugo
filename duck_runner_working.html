@@ -49,6 +49,7 @@
                 this.platforms = null;
                 this.obstacles = null;
                 this.coins = null;
+                this.powerUps = null;
                 this.score = 0;
                 this.distance = 0;
                 this.scoreText = null;
@@ -58,6 +59,25 @@
                 this.coinTimer = 0;
                 this.nextObstacleX = 800; // First obstacle at 800 pixels (duck starts at 100)
                 this.nextCoinX = 400; // First coin at 400 pixels
+                this.nextPowerUpX = 1500; // First power-up at 1500 pixels
+                
+                // Lane system
+                this.lanes = [400, 500, 600];
+                this.currentLane = 1; // Start middle
+                
+                // New mechanics
+                this.isSliding = false;
+                this.hasShield = false;
+                this.hasMagnet = false;
+                this.shieldTimer = 0;
+                this.magnetTimer = 0;
+                
+                // Betting system
+                this.betPlaced = false;
+                this.betModal = null;
+                this.betText = null;
+                this.betButton = null;
+                
                 console.log("Game variables reset - Speed:", this.gameSpeed);
             }
 
@@ -84,17 +104,53 @@
                     .fillRect(0, 0, 64, 8)
                     .generateTexture('ground', 64, 64);
 
-                // Obstacles
+                // Regular obstacles (low)
                 this.add.graphics()
                     .fillStyle(0xFF0000)
                     .fillRect(0, 0, 40, 40)
                     .generateTexture('obstacle', 40, 40);
+
+                // High obstacles (taller red - for sliding under)
+                this.add.graphics()
+                    .fillStyle(0xFF0000)
+                    .fillRect(0, 0, 40, 80)
+                    .generateTexture('high_obstacle', 40, 80);
 
                 // Coins
                 this.add.graphics()
                     .fillStyle(0xFFD700)
                     .fillCircle(15, 15, 15)
                     .generateTexture('coin', 30, 30);
+
+                // Hills (green rounded rectangle for parallax)
+                this.add.graphics()
+                    .fillStyle(0x228B22)
+                    .fillRoundedRect(0, 0, 200, 100, 20)
+                    .generateTexture('hill', 200, 100);
+
+                // Clouds (white puffs)
+                this.add.graphics()
+                    .fillStyle(0xFFFFFF)
+                    .fillCircle(50, 50, 50)
+                    .fillCircle(80, 60, 30)
+                    .fillCircle(30, 60, 30)
+                    .generateTexture('cloud', 100, 100);
+
+                // Power-up: Magnet (green square)
+                this.add.graphics()
+                    .fillStyle(0x00FF00)
+                    .fillRect(0, 0, 30, 30)
+                    .fillStyle(0x004400)
+                    .fillRect(5, 5, 20, 20)
+                    .generateTexture('magnet', 30, 30);
+
+                // Power-up: Shield (blue circle)
+                this.add.graphics()
+                    .fillStyle(0x0000FF)
+                    .fillCircle(15, 15, 15)
+                    .fillStyle(0x4444FF)
+                    .fillCircle(15, 15, 10)
+                    .generateTexture('shield', 30, 30);
             }
 
             create() {
@@ -108,12 +164,13 @@
                 this.platforms = this.physics.add.staticGroup();
                 this.obstacles = this.physics.add.staticGroup();
                 this.coins = this.physics.add.group();
+                this.powerUps = this.physics.add.group();
 
                 // Create initial ground - LOTS of it, extending far to the right
                 this.createInitialGround();
 
-                // Create player duck that will move to the right
-                this.player = this.physics.add.sprite(100, 500, 'duck');
+                // Create player duck that will move to the right (positioned in middle lane)
+                this.player = this.physics.add.sprite(100, this.lanes[this.currentLane], 'duck');
                 this.player.setBounce(0);
                 this.player.setCollideWorldBounds(true);
                 this.player.body.setSize(45, 35);
@@ -128,9 +185,16 @@
                 this.physics.add.collider(this.player, this.platforms);
                 this.physics.add.collider(this.player, this.obstacles, this.hitObstacle, null, this);
                 this.physics.add.overlap(this.player, this.coins, this.collectCoin, null, this);
+                this.physics.add.overlap(this.player, this.powerUps, this.collectPowerUp, null, this);
 
-                // Controls
+                // Controls (spacebar + arrow keys for lanes)
                 this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+                this.upKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
+                this.downKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
+
+                // Parallax backgrounds (added before camera follow)
+                this.hills = this.add.tileSprite(0, 400, 800, 300, 'hill').setScrollFactor(0.5);
+                this.clouds = this.add.tileSprite(0, 50, 800, 200, 'cloud').setScrollFactor(0.2);
 
                 // Camera follows the duck
                 this.cameras.main.startFollow(this.player);
@@ -138,39 +202,130 @@
 
                 // UI - Fixed to camera (follows the view)
                 this.scoreText = this.add.text(16, 16, 'Score: 0\nDistance: 0m', {
-                    fontSize: '18px',
+                    fontSize: '16px',
                     fill: '#000',
                     backgroundColor: '#fff',
-                    padding: { x: 10, y: 5 }
+                    padding: { x: 8, y: 4 }
                 });
                 this.scoreText.setScrollFactor(0); // Fixed to camera
 
-                this.add.text(400, 50, 'Press SPACEBAR to Jump!', {
-                    fontSize: '16px',
+                this.add.text(400, 50, 'SPACE: Jump | UP/DOWN: Change Lanes | HOLD DOWN: Slide', {
+                    fontSize: '14px',
                     fill: '#333',
                     backgroundColor: '#fff',
                     padding: { x: 8, y: 4 }
                 }).setOrigin(0.5, 0).setScrollFactor(0);
 
-                console.log("Game setup complete - duck should move forward!");
+                // Power-up status display
+                this.powerUpText = this.add.text(16, 120, '', {
+                    fontSize: '14px',
+                    fill: '#000',
+                    backgroundColor: '#fff',
+                    padding: { x: 5, y: 3 }
+                });
+                this.powerUpText.setScrollFactor(0);
+
+                // Pre-run betting modal
+                this.betModal = this.add.rectangle(400, 300, 500, 250, 0xFFFFFF, 0.9).setOrigin(0.5).setScrollFactor(0);
+                this.betModal.setStrokeStyle(3, 0x000000);
+                
+                this.betText = this.add.text(400, 220, '🎰 CRYPTO BET 🎰\nBet 0.01 ETH to double if >1000m?\n(7% house edge)', { 
+                    fontSize: '18px', 
+                    fill: '#000',
+                    align: 'center'
+                }).setOrigin(0.5).setScrollFactor(0);
+                
+                this.betButton = this.add.text(400, 320, '💰 [PLACE BET] 💰', { 
+                    fontSize: '20px', 
+                    fill: '#00AA00',
+                    backgroundColor: '#FFFF00',
+                    padding: { x: 10, y: 5 }
+                }).setOrigin(0.5).setScrollFactor(0).setInteractive();
+                
+                this.skipButton = this.add.text(400, 370, 'Skip Bet - Play Free', { 
+                    fontSize: '16px', 
+                    fill: '#666666',
+                    backgroundColor: '#DDDDDD',
+                    padding: { x: 8, y: 4 }
+                }).setOrigin(0.5).setScrollFactor(0).setInteractive();
+
+                // Bet button events
+                this.betButton.on('pointerdown', () => {
+                    this.betPlaced = true;
+                    this.startGame();
+                });
+                
+                this.skipButton.on('pointerdown', () => {
+                    this.betPlaced = false;
+                    this.startGame();
+                });
+
+                // Pause physics until bet decision
+                this.physics.pause();
+
+                console.log("Game setup complete - waiting for bet decision!");
+            }
+
+            startGame() {
+                // Remove betting modal
+                if (this.betModal) {
+                    this.betModal.destroy();
+                    this.betText.destroy();
+                    this.betButton.destroy();
+                    this.skipButton.destroy();
+                }
+                
+                // Start physics
+                this.physics.resume();
+                console.log("Game started! Bet placed:", this.betPlaced);
             }
 
             createInitialGround() {
-                // Create ground extending very far to the right
+                // Create ground extending very far to the right (adjusted to y=668 for lane system)
                 for (let x = 0; x < 10000; x += 64) {
-                    const ground = this.platforms.create(x, 568, 'ground');
+                    const ground = this.platforms.create(x, 668, 'ground');
                     ground.setScale(1).refreshBody();
                 }
             }
 
             update(time, delta) {
+                // Don't update if physics is paused (waiting for bet)
+                if (!this.physics.world.enabled) return;
+
+                // Parallax background scrolling
+                this.hills.tilePositionX += this.gameSpeed * 0.0005 * delta;
+                this.clouds.tilePositionX += this.gameSpeed * 0.0002 * delta;
+
                 // Calculate distance based on duck position
                 this.distance = Math.max(0, this.player.x - 100);
                 this.score = Math.floor(this.distance / 10);
-                this.scoreText.setText(`Score: ${this.score}\nDistance: ${Math.floor(this.distance)}m\nDuck Y: ${Math.round(this.player.y)}\nOn Ground: ${this.player.body.touching.down}`);
 
-                // Handle jumping
-                if (this.spaceKey.isDown && this.player.body.touching.down) {
+                // Lane switching
+                if (Phaser.Input.Keyboard.JustDown(this.upKey) && this.currentLane > 0) {
+                    this.currentLane--;
+                    this.player.y = this.lanes[this.currentLane];
+                    console.log("Moved to lane", this.currentLane);
+                }
+                if (Phaser.Input.Keyboard.JustDown(this.downKey) && this.currentLane < 2) {
+                    this.currentLane++;
+                    this.player.y = this.lanes[this.currentLane];
+                    console.log("Moved to lane", this.currentLane);
+                }
+
+                // Sliding mechanic (hold down key while on ground)
+                if (this.downKey.isDown && this.player.body.touching.down && !this.isSliding) {
+                    this.isSliding = true;
+                    this.player.setScale(1.2, 0.6); // Flatten duck
+                    console.log("Duck sliding!");
+                    this.time.delayedCall(1000, () => {
+                        this.isSliding = false;
+                        this.player.setScale(1.2);
+                        console.log("Duck stopped sliding");
+                    });
+                }
+
+                // Handle jumping (only if not sliding)
+                if (this.spaceKey.isDown && this.player.body.touching.down && !this.isSliding) {
                     this.player.setVelocityY(-this.jumpPower);
                     console.log("Duck jumped!");
                 }
@@ -180,7 +335,13 @@
                     this.player.setVelocityX(this.gameSpeed);
                 }
 
-                // Spawn obstacles based on duck position (much more spaced out)
+                // Update UI
+                this.updateUI();
+
+                // Update power-up timers
+                this.updatePowerUps(delta);
+
+                // Spawn obstacles based on duck position (with high/low types)
                 if (this.player.x > this.nextObstacleX - 200) {
                     this.spawnObstacle();
                     this.nextObstacleX = this.player.x + 600 + Math.random() * 800; // Next obstacle 600-1400 pixels ahead
@@ -194,6 +355,13 @@
                     console.log("Next coin will be at:", this.nextCoinX);
                 }
 
+                // Spawn power-ups rarely (every 2000m or so)
+                if (this.player.x > this.nextPowerUpX - 400) {
+                    this.spawnPowerUp();
+                    this.nextPowerUpX = this.player.x + 1500 + Math.random() * 1000; // Next power-up 1500-2500 pixels ahead
+                    console.log("Next power-up will be at:", this.nextPowerUpX);
+                }
+
                 // Clean up old objects behind the duck
                 this.cleanupObjects();
 
@@ -204,10 +372,23 @@
             }
 
             spawnObstacle() {
-                const obstacle = this.obstacles.create(this.nextObstacleX, 528, 'obstacle');
-                obstacle.body.setSize(35, 35);
+                // Random obstacle type: high (slide under) or low (jump over)
+                const isHigh = Math.random() > 0.5;
+                const texture = isHigh ? 'high_obstacle' : 'obstacle';
+                const obsY = isHigh ? 588 : 628; // High at 588 (slide under), low at 628 (jump over)
+                
+                const obstacle = this.obstacles.create(this.nextObstacleX, obsY, texture);
+                
+                if (isHigh) {
+                    obstacle.body.setSize(35, 75);
+                    obstacle.obstacleType = 'high';
+                } else {
+                    obstacle.body.setSize(35, 35);
+                    obstacle.obstacleType = 'low';
+                }
+                
                 obstacle.refreshBody();
-                console.log("Obstacle spawned at", obstacle.x);
+                console.log(`${obstacle.obstacleType} obstacle spawned at`, obstacle.x);
             }
 
             spawnCoin() {
@@ -228,6 +409,102 @@
                 console.log("Coin spawned at", coin.x, coin.y);
             }
 
+            updateUI() {
+                // Update main score display
+                this.scoreText.setText(`Score: ${this.score}\nDistance: ${Math.floor(this.distance)}m\nLane: ${this.currentLane + 1}/3\nSpeed: ${Math.round(this.gameSpeed)}`);
+                
+                // Update power-up status
+                let powerUpStatus = '';
+                if (this.hasShield) powerUpStatus += `🛡️ Shield: ${Math.ceil(this.shieldTimer/1000)}s\n`;
+                if (this.hasMagnet) powerUpStatus += `🧲 Magnet: ${Math.ceil(this.magnetTimer/1000)}s\n`;
+                if (this.isSliding) powerUpStatus += `⬇️ Sliding\n`;
+                
+                this.powerUpText.setText(powerUpStatus);
+            }
+
+            updatePowerUps(delta) {
+                // Shield timer
+                if (this.hasShield) {
+                    this.shieldTimer -= delta;
+                    if (this.shieldTimer <= 0) {
+                        this.hasShield = false;
+                        this.player.clearTint();
+                        console.log("Shield expired");
+                    }
+                }
+                
+                // Magnet timer
+                if (this.hasMagnet) {
+                    this.magnetTimer -= delta;
+                    if (this.magnetTimer <= 0) {
+                        this.hasMagnet = false;
+                        console.log("Magnet expired");
+                    } else {
+                        // Attract nearby coins
+                        this.coins.children.entries.forEach(coin => {
+                            const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, coin.x, coin.y);
+                            if (distance < 200) {
+                                this.physics.moveToObject(coin, this.player, 300);
+                            }
+                        });
+                    }
+                }
+            }
+
+            spawnPowerUp() {
+                const powerUpType = Math.random() > 0.5 ? 'magnet' : 'shield';
+                const powerUpHeight = this.lanes[1] - 50; // Spawn in middle area
+                const powerUp = this.powerUps.create(this.nextPowerUpX, powerUpHeight, powerUpType);
+                powerUp.body.setSize(25, 25);
+                powerUp.powerUpType = powerUpType;
+                
+                // Add glowing effect
+                this.tweens.add({
+                    targets: powerUp,
+                    scaleX: 1.2,
+                    scaleY: 1.2,
+                    duration: 500,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut'
+                });
+                
+                console.log(`${powerUpType} power-up spawned at`, powerUp.x);
+            }
+
+            collectPowerUp(player, powerUp) {
+                console.log(`${powerUp.powerUpType} power-up collected!`);
+                
+                if (powerUp.powerUpType === 'shield') {
+                    this.hasShield = true;
+                    this.shieldTimer = 8000; // 8 seconds
+                    this.player.setTint(0x4444FF); // Blue tint
+                    console.log("Shield activated!");
+                } else if (powerUp.powerUpType === 'magnet') {
+                    this.hasMagnet = true;
+                    this.magnetTimer = 10000; // 10 seconds
+                    console.log("Magnet activated!");
+                }
+                
+                // Visual feedback
+                const bonusText = this.add.text(powerUp.x, powerUp.y, `+${powerUp.powerUpType.toUpperCase()}!`, {
+                    fontSize: '16px',
+                    fill: powerUp.powerUpType === 'shield' ? '#0000FF' : '#00FF00',
+                    fontStyle: 'bold'
+                });
+                
+                this.tweens.add({
+                    targets: bonusText,
+                    y: powerUp.y - 50,
+                    alpha: 0,
+                    duration: 1500,
+                    onComplete: () => bonusText.destroy()
+                });
+                
+                powerUp.destroy();
+                this.score += 100; // Bonus points
+            }
+
             cleanupObjects() {
                 // Remove objects that are far behind the duck
                 const cleanupDistance = this.player.x - 1000;
@@ -243,15 +520,61 @@
                         coin.destroy();
                     }
                 });
+
+                this.powerUps.children.entries.forEach(powerUp => {
+                    if (powerUp.x < cleanupDistance) {
+                        powerUp.destroy();
+                    }
+                });
             }
 
-            hitObstacle() {
+            hitObstacle(player, obstacle) {
+                // Check if collision should be ignored
+                if (this.hasShield) {
+                    console.log("Shield protected from obstacle!");
+                    obstacle.destroy();
+                    return;
+                }
+                
+                // Check sliding/jumping mechanics
+                if (obstacle.obstacleType === 'high' && this.isSliding) {
+                    console.log("Successfully slid under high obstacle!");
+                    return; // No collision
+                }
+                
+                if (obstacle.obstacleType === 'low' && !this.player.body.touching.down) {
+                    console.log("Successfully jumped over low obstacle!");
+                    return; // No collision
+                }
+                
+                // Actual collision - game over
                 console.log("Game Over!");
                 this.physics.pause();
                 this.player.setTint(0xff0000);
                 
-                const gameOverText = this.add.text(this.player.x, this.player.y - 100, 'GAME OVER!\nFinal Score: ' + this.score + '\nPress R to Restart', {
-                    fontSize: '28px',
+                // Check betting result
+                let betResult = '';
+                if (this.betPlaced) {
+                    if (this.distance > 1000) {
+                        const won = Math.random() > 0.07; // 93% chance to win (7% house edge)
+                        if (won) {
+                            betResult = '\n🎉 BET WON! You would receive 0.02 ETH! 🎉';
+                            console.log("Bet won! Distance > 1000m and luck succeeded");
+                        } else {
+                            betResult = '\n😞 Bet lost to house edge 😞';
+                            console.log("Bet lost to house edge");
+                        }
+                    } else {
+                        betResult = '\n😞 Bet lost - distance < 1000m 😞';
+                        console.log("Bet lost - insufficient distance");
+                    }
+                } else {
+                    betResult = '\n(No bet placed)';
+                }
+                
+                const gameOverText = this.add.text(this.player.x, this.player.y - 150, 
+                    `GAME OVER!\nFinal Score: ${this.score}\nDistance: ${Math.floor(this.distance)}m${betResult}\n\nPress R to Restart`, {
+                    fontSize: '24px',
                     fill: '#ff0000',
                     backgroundColor: '#fff',
                     padding: { x: 15, y: 8 },
